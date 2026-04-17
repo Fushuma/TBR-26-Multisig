@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Fushuma Multisig - Mint Vote</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/ethers/5.7.2/ethers.umd.min.js"></script>
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; padding: 40px; background: #121212; color: #e0e0e0; line-height: 1.6; }
+        .card { background: #1e1e1e; padding: 30px; border-radius: 12px; max-width: 550px; margin: auto; box-shadow: 0 10px 30px rgba(0,0,0,0.5); border: 1px solid #333; }
+        h2 { color: #fff; margin-top: 0; border-bottom: 2px solid #4CAF50; padding-bottom: 10px; }
+        .info-box { background: #252525; padding: 15px; border-radius: 8px; margin-bottom: 25px; border-left: 4px solid #4CAF50; }
+        .info-item { margin: 5px 0; font-size: 0.95em; }
+        .label { color: #888; font-weight: bold; width: 120px; display: inline-block; }
+        button { background: #4CAF50; color: white; border: none; padding: 15px 20px; border-radius: 6px; cursor: pointer; font-size: 16px; font-weight: bold; width: 100%; transition: background 0.3s; }
+        button:hover { background: #45a049; }
+        #result { margin-top: 25px; display: none; }
+        textarea { width: 100%; height: 120px; margin-top: 10px; background: #000; color: #00ff00; border: 1px solid #444; font-family: 'Courier New', monospace; padding: 10px; border-radius: 4px; box-sizing: border-box; font-size: 13px; }
+        .copy-btn { background: #333; margin-top: 10px; font-size: 14px; padding: 8px; }
+        .footer { font-size: 0.8em; color: #777; margin-top: 20px; text-align: center; }
+    </style>
+</head>
+<body>
+
+<div class="card">
+    <h2>Multisig Voting Signature</h2>
+    
+    <div class="info-box">
+        <div class="info-item"><span class="label">Project:</span> TimberChain (Fushuma)</div>
+        <div class="info-item"><span class="label">Action:</span> Mint 20,000,000 TBR26</div>
+        <div class="info-item"><span class="label">Recipient:</span> Multisig (0xCcA8...3075)</div>
+        <div class="info-item"><span class="label">Network:</span> Fushuma (ID: 121224)</div>
+    </div>
+
+    <p style="font-size: 0.85em; color: #bbb;">Connect your wallet (MetaMask or Rabby) to the Fushuma network to sign your approval.</p>
+    
+    <button id="signBtn">🔗 Connect & Sign Approval</button>
+
+    <div id="result">
+        <p style="color: #4CAF50; font-weight: bold;">✅ Vote generated successfully!</p>
+        <p style="font-size: 0.85em;">Copy the code below and send it to the team:</p>
+        <textarea id="sigOutput" readonly></textarea>
+        <button class="copy-btn" id="copyBtn">📋 Copy to Clipboard</button>
+    </div>
+</div>
+
+<div class="footer">
+    This action is a secure off-chain signature and does not cost any gas.
+</div>
+
+<script>
+    const SAFE_ADDRESS = "0xCcA8d3E774a8e5b1C4531aaf4e9A553cb2933075";
+    const TOKEN_ADDRESS = "0x7aeF7bd25a1344C721Af8feA4E24D16C34867FB7";
+    const CHAIN_ID = 121224;
+
+    document.getElementById('signBtn').onclick = async () => {
+        if (!window.ethereum) return alert("Please install a wallet (MetaMask or Rabby)");
+        
+        try {
+            const provider = new ethers.providers.Web3Provider(window.ethereum);
+            await provider.send("eth_requestAccounts", []);
+            const { chainId } = await provider.getNetwork();
+            
+            if (chainId !== CHAIN_ID) {
+                return alert("Error: Please switch your wallet to the Fushuma network (Chain ID 121224)");
+            }
+
+            const signer = provider.getSigner();
+            const userAddress = await signer.getAddress();
+
+            const abi = ["function mint(address to, uint256 amount)"];
+            const iface = new ethers.utils.Interface(abi);
+            const data = iface.encodeFunctionData("mint", [
+                SAFE_ADDRESS,
+                ethers.utils.parseUnits("20000000", 18)
+            ]);
+
+            const safeTx = {
+                to: TOKEN_ADDRESS,
+                value: 0,
+                data: data,
+                operation: 0,
+                safeTxGas: 0,
+                baseGas: 0,
+                gasPrice: 0,
+                gasToken: "0x0000000000000000000000000000000000000000",
+                refundReceiver: "0x0000000000000000000000000000000000000000",
+                nonce: 0 
+            };
+
+            const domain = { verifyingContract: SAFE_ADDRESS, chainId: CHAIN_ID };
+            const types = {
+                SafeTx: [
+                    { name: "to", type: "address" },
+                    { name: "value", type: "uint256" },
+                    { name: "data", type: "bytes" },
+                    { name: "operation", type: "uint8" },
+                    { name: "safeTxGas", type: "uint256" },
+                    { name: "baseGas", type: "uint256" },
+                    { name: "gasPrice", type: "uint256" },
+                    { name: "gasToken", type: "address" },
+                    { name: "refundReceiver", type: "address" },
+                    { name: "nonce", type: "uint256" }
+                ]
+            };
+
+            const signature = await signer._signTypedData(domain, types, safeTx);
+            
+            document.getElementById('sigOutput').value = `SIGNER: ${userAddress}\nSIGNATURE: ${signature}`;
+            document.getElementById('result').style.display = 'block';
+            document.getElementById('signBtn').innerText = "✅ Signed";
+            
+        } catch (err) {
+            console.error(err);
+            alert("Technical error: " + err.message);
+        }
+    };
+
+    document.getElementById('copyBtn').onclick = () => {
+        const copyText = document.getElementById("sigOutput");
+        copyText.select();
+        document.execCommand("copy");
+        alert("Copied to clipboard!");
+    };
+</script>
+</body>
+</html>
