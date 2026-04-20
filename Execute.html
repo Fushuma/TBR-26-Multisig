@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>TimberChain - Final Execution</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/ethers/5.7.2/ethers.umd.min.js"></script>
+    <style>
+        body { font-family: sans-serif; padding: 40px; background: #0f0f0f; color: #e0e0e0; }
+        .card { background: #1a1a1a; padding: 30px; border-radius: 12px; max-width: 600px; margin: auto; border: 1px solid #333; }
+        h2 { border-bottom: 2px solid #f44336; padding-bottom: 10px; }
+        textarea { width: 100%; height: 80px; background: #000; color: #0f0; border: 1px solid #444; margin: 10px 0; padding: 10px; font-family: monospace; }
+        button { background: #f44336; color: white; border: none; padding: 15px; border-radius: 6px; cursor: pointer; font-size: 16px; width: 100%; font-weight: bold; }
+        .status { margin-top: 20px; padding: 10px; border-radius: 5px; display: none; }
+    </style>
+</head>
+<body>
+
+<div class="card">
+    <h2>🚀 Final Execution (Mint 20M)</h2>
+    <p>Paste the signatures collected from the owners below:</p>
+    
+    <label>Signature 1 (CEO):</label>
+    <textarea id="sig1" placeholder="Paste full signature 1 here..."></textarea>
+    
+    <label>Signature 2 (Vladimir):</label>
+    <textarea id="sig2" placeholder="Paste full signature 2 here..."></textarea>
+
+    <button id="execBtn">Broadcast Transaction to Fushuma</button>
+
+    <div id="status" class="status"></div>
+</div>
+
+<script>
+    const SAFE_ADDRESS = "0xCcA8d3E774a8e5b1C4531aaf4e9A553cb2933075";
+    const TOKEN_ADDRESS = "0x7aeF7bd25a1344C721Af8feA4E24D16C34867FB7";
+    const CHAIN_ID = 121224;
+
+    const SAFE_ABI = [
+        "function execTransaction(address to, uint256 value, bytes data, uint8 operation, uint256 safeTxGas, uint256 baseGas, uint256 gasPrice, address gasToken, address refundReceiver, bytes signatures) external returns (bool success)"
+    ];
+
+    document.getElementById('execBtn').onclick = async () => {
+        const s1 = document.getElementById('sig1').value;
+        const s2 = document.getElementById('sig2').value;
+
+        if (!s1 || !s2) return alert("Please paste both signatures.");
+
+        try {
+            const provider = new ethers.providers.Web3Provider(window.ethereum);
+            await provider.send("eth_requestAccounts", []);
+            const signer = provider.getSigner();
+
+            // Extraction des signatures pures (on retire le texte "Signer: ...")
+            const cleanSig1 = s1.match(/0x[a-fA-F0-9]{130}/)[0];
+            const cleanSig2 = s2.match(/0x[a-fA-F0-9]{130}/)[0];
+
+            // Les signatures doivent être triées par adresse de signataire (croissant) pour le Safe
+            // Pour l'instant on les met bout à bout, si ça échoue, il faudra inverser s1 et s2
+            const combinedSigs = cleanSig1 + cleanSig2.slice(2);
+
+            const safeContract = new ethers.Contract(SAFE_ADDRESS, SAFE_ABI, signer);
+
+            // Préparation des données du Mint (les mêmes que pour la signature)
+            const iface = new ethers.utils.Interface(["function mint(address to, uint256 amount)"]);
+            const mintData = iface.encodeFunctionData("mint", [SAFE_ADDRESS, ethers.utils.parseUnits("20000000", 18)]);
+
+            const status = document.getElementById('status');
+            status.style.display = 'block';
+            status.style.background = '#333';
+            status.innerText = "Sending transaction...";
+
+            const tx = await safeContract.execTransaction(
+                TOKEN_ADDRESS, 0, mintData, 0, 0, 0, 0,
+                "0x0000000000000000000000000000000000000000",
+                "0x0000000000000000000000000000000000000000",
+                combinedSigs
+            );
+
+            status.innerText = "Transaction sent! Hash: " + tx.hash;
+            status.style.background = "#4CAF50";
+
+        } catch (err) {
+            alert("Error: " + err.message);
+        }
+    };
+</script>
+</body>
+</html>
