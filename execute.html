@@ -25,22 +25,22 @@
     
     <div class="sig-group">
         <label>Signature 1:</label>
-        <textarea class="sig-input" placeholder="Paste full signature here..."></textarea>
+        <textarea class="sig-input" placeholder="Paste signature 0x... here"></textarea>
     </div>
     
     <div class="sig-group">
         <label>Signature 2:</label>
-        <textarea class="sig-input" placeholder="Paste full signature here..."></textarea>
+        <textarea class="sig-input" placeholder="Paste signature 0x... here"></textarea>
     </div>
 
     <div class="sig-group">
         <label>Signature 3:</label>
-        <textarea class="sig-input" placeholder="Paste full signature here..."></textarea>
+        <textarea class="sig-input" placeholder="Paste signature 0x... here"></textarea>
     </div>
 
     <div class="sig-group">
         <label>Signature 4:</label>
-        <textarea class="sig-input" placeholder="Paste full signature here..."></textarea>
+        <textarea class="sig-input" placeholder="Paste signature 0x... here"></textarea>
     </div>
 
     <button id="execBtn">Broadcast to Fushuma Network</button>
@@ -65,57 +65,78 @@
             return alert("Error: You need at least 4 signatures to proceed.");
         }
 
+        const status = document.getElementById('status');
+        status.style.display = 'block';
+        status.style.background = '#333';
+        status.innerText = "Analyzing signatures and recovering addresses...";
+
         try {
             const provider = new ethers.providers.Web3Provider(window.ethereum);
             await provider.send("eth_requestAccounts", []);
             const signer = provider.getSigner();
 
-            // 1. Extraire et parser les signatures
-            const parsedSigs = rawSignatures.map(sigText => {
-                const addrMatch = sigText.match(/SIGNATAIRE: (0x[a-fA-F0-9]{40})/i) || sigText.match(/Signer: (0x[a-fA-F0-9]{40})/i);
-                const sigMatch = sigText.match(/0x[a-fA-F0-9]{130}/);
+            // 1. Préparer les données pour la récupération (EIP-712)
+            const iface = new ethers.utils.Interface(["function mint(address to, uint256 amount)"]);
+            const mintData = iface.encodeFunctionData("mint", [SAFE_ADDRESS, ethers.utils.parseUnits("20000000", 18)]);
+
+            const domain = { verifyingContract: SAFE_ADDRESS, chainId: CHAIN_ID };
+            const types = {
+                SafeTx: [
+                    { name: "to", type: "address" }, { name: "value", type: "uint256" }, { name: "data", type: "bytes" },
+                    { name: "operation", type: "uint8" }, { name: "safeTxGas", type: "uint256" }, { name: "baseGas", type: "uint256" },
+                    { name: "gasPrice", type: "uint256" }, { name: "gasToken", type: "address" }, { name: "refundReceiver", type: "address" },
+                    { name: "nonce", type: "uint256" }
+                ]
+            };
+            const safeTx = {
+                to: TOKEN_ADDRESS, value: 0, data: mintData, operation: 0,
+                safeTxGas: 0, baseGas: 0, gasPrice: 0, gasToken: "0x0000000000000000000000000000000000000000",
+                refundReceiver: "0x0000000000000000000000000000000000000000", nonce: 0 
+            };
+
+            // 2. Extraire l'adresse de chaque signature pour le TRI AUTOMATIQUE
+            let parsedSigs = rawSignatures.map(sig => {
+                const cleanSig = sig.match(/0x[a-fA-F0-9]{130}/);
+                if (!cleanSig) throw new Error("Format de signature invalide (0x... 130 caractères attendu).");
                 
-                if (!addrMatch || !sigMatch) throw new Error("Format de signature invalide détecté.");
+                // Récupération magique de l'adresse du signataire
+                const recoveredAddr = ethers.utils.verifyTypedData(domain, types, safeTx, cleanSig[0]);
                 
                 return {
-                    address: addrMatch[1].toLowerCase(),
-                    signature: sigMatch[0]
+                    address: recoveredAddr.toLowerCase(),
+                    signature: cleanSig[0]
                 };
             });
 
-            // 2. TRI AUTOMATIQUE (Obligatoire pour Gnosis/Safe)
-            // Les adresses doivent être triées par ordre croissant
-            parsedSigs.sort((a, b) => (a.address > b.address ? 1 : -1));
+            // 3. TRI par adresse (Obligatoire pour le contrat Safe)
+            parsedSigs.sort((a, b) => a.address.localeCompare(b.address));
 
-            // 3. Combiner les signatures triées
+            // 4. Combiner les signatures triées
             let combinedSigs = "0x";
             parsedSigs.forEach(s => {
                 combinedSigs += s.signature.slice(2);
             });
 
             const safeContract = new ethers.Contract(SAFE_ADDRESS, SAFE_ABI, signer);
-            const iface = new ethers.utils.Interface(["function mint(address to, uint256 amount)"]);
-            const mintData = iface.encodeFunctionData("mint", [SAFE_ADDRESS, ethers.utils.parseUnits("20000000", 18)]);
+            
+            status.innerText = "Transaction detected! Please confirm in your wallet...";
 
-            const status = document.getElementById('status');
-            status.style.display = 'block';
-            status.style.background = '#333';
-            status.innerText = "Processing transaction with 4 signatures...";
-
+            // On lance la transaction en forçant le GasLimit pour éviter l'erreur de simulation
             const tx = await safeContract.execTransaction(
                 TOKEN_ADDRESS, 0, mintData, 0, 0, 0, 0,
                 "0x0000000000000000000000000000000000000000",
                 "0x0000000000000000000000000000000000000000",
-                combinedSigs
+                combinedSigs,
+                { gasLimit: 800000 } 
             );
 
-            status.innerText = "Success! Transaction Broadcasted.\nHash: " + tx.hash;
+            status.innerText = "✅ Success! Hash: " + tx.hash;
             status.style.background = "#4CAF50";
 
         } catch (err) {
             console.error(err);
-            alert("Execution Error: " + err.message);
-            document.getElementById('status').style.display = 'none';
+            status.innerText = "❌ Error: " + (err.reason || err.message);
+            status.style.background = "#f44336";
         }
     };
 </script>
